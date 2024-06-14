@@ -1,0 +1,10 @@
+[package]
+name = "pomegranate"
+description = "Pomegranate: a network-based distributed computing framework"
+authors = ["Sergio Carmine <me@sergiocarmi.net>"]
+license = "MIT"
+version = "0.1.0"
+edition = "2021"
+readme = "README.md"
+
+[dependencies]
