@@ -1,1 +1,1 @@
-mod socket;
+pub mod proto;

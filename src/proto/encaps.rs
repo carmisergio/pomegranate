@@ -1,20 +1,24 @@
-use core::panic;
-use std::mem::{self, size_of};
+use std::{future::Future, mem};
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt, BufReader};
 
-/// Wrapper for an AsyncWriteExt object that provides encrypted message passing support
-pub struct EncryptedWriter<W: AsyncWriteExt> {
-    writer: W,
+/// Writes encapsulated messages
+pub trait AsyncMsgSend {
+    /// Sends a message
+    fn send(&mut self, msg: &[u8]) -> impl Future<Output = std::io::Result<()>>;
 }
-// TODO: get key and starting nonce, update nonce as messages are sent
+
+/// Receives encapsulated messages
+pub trait AsyncMsgRecv {
+    /// Sends a message
+    fn recv(&mut self) -> impl Future<Output = io::Result<Vec<u8>>>;
+}
 
 /// Wrapper for AsyncWriteExt object that provides length-and-message encapsulation
-pub struct EncapsulatedWriter<W> {
+pub struct LenU64EncapsMsgSender<W> {
     writer: W,
 }
-// TODO: get key and starting nonce, update nonce as messages are received
 
-impl<W> EncapsulatedWriter<W>
+impl<W> LenU64EncapsMsgSender<W>
 where
     W: AsyncWriteExt + Unpin,
 {
@@ -22,9 +26,14 @@ where
     pub fn new(writer: W) -> Self {
         Self { writer }
     }
+}
 
+impl<W> AsyncMsgSend for LenU64EncapsMsgSender<W>
+where
+    W: AsyncWriteExt + Unpin,
+{
     /// Sends a length-and-message encapulated message
-    pub async fn send(&mut self, msg: &[u8]) -> io::Result<()> {
+    async fn send(&mut self, msg: &[u8]) -> io::Result<()> {
         // Convert length of message to u64 type that is going to be sent
 
         let len = u64::try_from(msg.len()).map_err(|_| {
@@ -40,11 +49,11 @@ where
 }
 
 /// Wrapper for AsyncReadExt object that provides length-and-message encapsulation
-pub struct EncapsulatedReader<R> {
+pub struct LenU64EncapsMsgReceiver<R> {
     reader: BufReader<R>,
 }
 
-impl<R> EncapsulatedReader<R>
+impl<R> LenU64EncapsMsgReceiver<R>
 where
     R: AsyncReadExt + Unpin,
 {
@@ -54,9 +63,14 @@ where
             reader: BufReader::new(reader),
         }
     }
+}
 
+impl<R> AsyncMsgRecv for LenU64EncapsMsgReceiver<R>
+where
+    R: AsyncReadExt + Unpin,
+{
     /// Receives a length-and-message encapsulated message
-    pub async fn recv(&mut self) -> io::Result<Vec<u8>> {
+    async fn recv(&mut self) -> io::Result<Vec<u8>> {
         // Read length
         let mut len = [0u8; mem::size_of::<u64>()];
         self.reader.read_exact(&mut len).await?;
