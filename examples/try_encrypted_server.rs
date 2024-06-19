@@ -1,6 +1,6 @@
 use std::{str::from_utf8, time::Duration};
 
-use pomegranate::proto::{
+use pomegranate::comm::{
     crypto::{server_setup_encrypted_channel, RsaKeyPair},
     encaps::{AsyncMsgRecv, AsyncMsgSend, LenU64EncapsMsgReceiver, LenU64EncapsMsgSender},
 };
