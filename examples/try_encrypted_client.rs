@@ -1,7 +1,7 @@
 use std::{str::from_utf8, time::Duration};
 
 use pomegranate::comm::{
-    crypto::client_setup_encrypted_channel,
+    crypto::{client_setup_encrypted_channel, ServerPublicKeyValidator},
     encaps::{AsyncMsgRecv, AsyncMsgSend, LenU64EncapsMsgReceiver, LenU64EncapsMsgSender},
 };
 use tokio::net::TcpStream;
@@ -19,10 +19,15 @@ async fn main() {
     let receiver = LenU64EncapsMsgReceiver::new(reader);
 
     // Enstablish a secure channel
-    let (mut sender, mut receiver) =
-        client_setup_encrypted_channel(sender, receiver, Duration::from_millis(1000))
-            .await
-            .unwrap();
+    let mut key_validator = ServerPublicKeyValidator::new();
+    let (mut sender, mut receiver) = client_setup_encrypted_channel(
+        sender,
+        receiver,
+        Duration::from_millis(1000),
+        &mut key_validator,
+    )
+    .await
+    .unwrap();
 
     println!("Encrypted channel enstablished!");
 
