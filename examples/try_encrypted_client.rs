@@ -19,7 +19,7 @@ async fn main() {
     let receiver = LenU64EncapsMsgReceiver::new(reader);
 
     // Enstablish a secure channel
-    let mut key_validator = ServerPublicKeyValidator::new();
+    let mut key_validator = ServerPublicKeyValidator::new(false);
     let (mut sender, mut receiver) = client_setup_encrypted_channel(
         sender,
         receiver,

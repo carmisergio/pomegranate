@@ -4,7 +4,7 @@ use pomegranate::comm::{
     crypto::{server_setup_encrypted_channel, RsaKeyPair},
     encaps::{AsyncMsgRecv, AsyncMsgSend, LenU64EncapsMsgReceiver, LenU64EncapsMsgSender},
 };
-use tokio::net::TcpListener;
+use tokio::{net::TcpListener, time};
 
 const PORT: u16 = 1234;
 
@@ -36,12 +36,19 @@ async fn main() {
 
     println!("Encrypted channel enstablished!");
 
-    sender.send("Hello from server".as_bytes()).await.unwrap();
-    sender.send("Hello from server 2".as_bytes()).await.unwrap();
+    for i in 0..1000 {
+        sender
+            .send(format!("Hello from server, {}", i).as_bytes())
+            .await
+            .unwrap();
 
-    let msg = receiver.recv().await.unwrap();
-    println!("Message from client: {}", from_utf8(&msg).unwrap());
+        time::sleep(Duration::from_millis(1000)).await;
+    }
+    // sender.send("Hello from server 2".as_bytes()).await.unwrap();
 
-    let msg = receiver.recv().await.unwrap();
-    println!("Message from client: {}", from_utf8(&msg).unwrap());
+    // let msg = receiver.recv().await.unwrap();
+    // println!("Message from client: {}", from_utf8(&msg).unwrap());
+
+    // let msg = receiver.recv().await.unwrap();
+    // println!("Message from client: {}", from_utf8(&msg).unwrap());
 }

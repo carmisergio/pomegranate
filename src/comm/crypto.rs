@@ -1,4 +1,4 @@
-use std::{fmt::Display, time::Duration};
+use std::time::Duration;
 
 use aes_gcm_siv::{
     aead::{generic_array::GenericArray, rand_core::RngCore, Aead, OsRng},
@@ -9,10 +9,7 @@ use rsa::{
     pkcs1::{DecodeRsaPublicKey, EncodeRsaPublicKey},
     Pkcs1v15Encrypt, RsaPrivateKey, RsaPublicKey,
 };
-use tokio::{
-    io,
-    time::{self, error::Elapsed},
-};
+use tokio::{io, time};
 
 use super::encaps::{AsyncMsgRecv, AsyncMsgSend};
 
@@ -191,21 +188,25 @@ impl RsaKeyPair {
 /// Storage for trusted server public keys
 pub struct ServerPublicKeyValidator {
     key: Option<RsaPublicKey>,
+    bypass_check: bool,
 }
 
 impl ServerPublicKeyValidator {
     /// Constructs a new TrustedServerKeyStore
-    pub fn new() -> Self {
-        Self { key: None }
+    pub fn new(bypass_check: bool) -> Self {
+        Self {
+            key: None,
+            bypass_check,
+        }
     }
 
     /// Check if key is trusted
-    pub fn validate(&mut self, key: &RsaPublicKey) -> Result<(), EncChannelSetupError> {
+    pub fn validate(&mut self, key: &RsaPublicKey) -> Result<(), ()> {
         if let Some(k) = &self.key {
-            if key == k {
+            if key == k || self.bypass_check {
                 Ok(())
             } else {
-                Err(EncChannelSetupError::ServerPublicKeyChanged)
+                Err(())
             }
         } else {
             // First connection, trust key
@@ -215,43 +216,8 @@ impl ServerPublicKeyValidator {
     }
 }
 
-// Encrypted channel setup error
-#[derive(Debug)]
-pub enum EncChannelSetupError {
-    ServerPublicKeyChanged,
-    Timeout,
-    IoError(io::Error),
-}
-
-impl From<io::Error> for EncChannelSetupError {
-    fn from(value: io::Error) -> Self {
-        Self::IoError(value)
-    }
-}
-
-impl From<Elapsed> for EncChannelSetupError {
-    fn from(_: Elapsed) -> Self {
-        Self::Timeout
-    }
-}
-
-impl Display for EncChannelSetupError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self {
-            &EncChannelSetupError::ServerPublicKeyChanged => {
-                write!(f, "server public key changed!")
-            }
-            &EncChannelSetupError::Timeout => {
-                write!(f, "timeout error")
-            }
-            &EncChannelSetupError::IoError(err) => err.fmt(f),
-        }
-    }
-}
-
 /// Encrypted channel setup result
-pub type EncChannelSetupResult<S, R> =
-    Result<(AES256GCMMsgSender<S>, AES256GCMMsgReceiver<R>), EncChannelSetupError>;
+pub type EncChannelSetupResult<S, R> = io::Result<(AES256GCMMsgSender<S>, AES256GCMMsgReceiver<R>)>;
 
 /// Handles performing the initial key exchange phase and constructing an encrypted message channel
 /// on the client side
@@ -275,7 +241,9 @@ where
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid public key"))?;
 
     // Check server public key
-    key_validator.validate(&pub_key)?;
+    key_validator
+        .validate(&pub_key)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "untrusted public key"))?;
 
     // Serialize, encrypt with public key and send symmetric encryption initializers
     let sym_init_bytes = rkyv::to_bytes::<_, 128>(&sym_init)
@@ -370,7 +338,7 @@ mod tests {
 
     #[test]
     fn server_key_validation() {
-        let mut key_validator = ServerPublicKeyValidator::new();
+        let mut key_validator = ServerPublicKeyValidator::new(false);
 
         let key1 = RsaPrivateKey::from_p_q(
             BigUint::from_bytes_be(&vec![0x02]),
@@ -399,5 +367,38 @@ mod tests {
 
         // Validation with incorrect key
         key_validator.validate(&key2).unwrap_err();
+    }
+
+    #[test]
+    fn server_key_validation_bypass() {
+        let mut key_validator = ServerPublicKeyValidator::new(true);
+
+        let key1 = RsaPrivateKey::from_p_q(
+            BigUint::from_bytes_be(&vec![0x02]),
+            BigUint::from_bytes_be(&vec![0x03]),
+            BigUint::from_bytes_be(&vec![0x01]),
+        )
+        .unwrap();
+        let key1 = RsaPublicKey::from(key1);
+
+        let key2 = RsaPrivateKey::from_p_q(
+            BigUint::from_bytes_be(&vec![0x05]),
+            BigUint::from_bytes_be(&vec![0x07]),
+            BigUint::from_bytes_be(&vec![0x01]),
+        )
+        .unwrap();
+        let key2 = RsaPublicKey::from(key2);
+
+        assert_eq!(key1, key1);
+        assert_ne!(key1, key2);
+
+        // First time validation
+        key_validator.validate(&key1).unwrap();
+
+        // Second validation with correct key
+        key_validator.validate(&key1).unwrap();
+
+        // Validation with incorrect key
+        key_validator.validate(&key2).unwrap();
     }
 }

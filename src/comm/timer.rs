@@ -5,6 +5,7 @@ pub struct DoublingTimer {
     // Configuration
     flat: u32, // Number of attempts before doubling duration
     init_dur: Duration,
+    max_dur: Duration,
 
     // State
     cur_dur: Duration,
@@ -14,11 +15,12 @@ pub struct DoublingTimer {
 impl DoublingTimer {
     /// Constructs a new ReconnectionTimer in the reset state
     /// flat = 0 -> never double
-    pub fn new(flat: u32, init_dur: Duration) -> Self {
+    pub fn new(flat: u32, init_dur: Duration, max_dur: Duration) -> Self {
         Self {
             flat,
             init_dur,
             cur_dur: init_dur,
+            max_dur,
             rem: flat,
         }
     }
@@ -37,6 +39,11 @@ impl DoublingTimer {
             }
         }
 
+        // Clamp value to max duration
+        if self.cur_dur >= self.max_dur {
+            self.cur_dur = self.max_dur;
+        }
+
         res
     }
 
@@ -53,7 +60,7 @@ mod tests {
 
     #[test]
     fn doubling_timer_normal() {
-        let mut timer = DoublingTimer::new(2, Duration::from_millis(1000));
+        let mut timer = DoublingTimer::new(2, Duration::from_millis(1000), Duration::from_secs(8));
 
         assert_eq!(timer.next(), Duration::from_millis(1000));
         assert_eq!(timer.next(), Duration::from_millis(1000));
@@ -61,6 +68,10 @@ mod tests {
         assert_eq!(timer.next(), Duration::from_millis(2000));
         assert_eq!(timer.next(), Duration::from_millis(4000));
         assert_eq!(timer.next(), Duration::from_millis(4000));
+        assert_eq!(timer.next(), Duration::from_millis(8000));
+        assert_eq!(timer.next(), Duration::from_millis(8000));
+        assert_eq!(timer.next(), Duration::from_millis(8000));
+        assert_eq!(timer.next(), Duration::from_millis(8000));
 
         timer.reset();
 
@@ -74,7 +85,8 @@ mod tests {
 
     #[test]
     fn doubling_timer_nodouble() {
-        let mut timer = DoublingTimer::new(0, Duration::from_millis(2500));
+        let mut timer =
+            DoublingTimer::new(0, Duration::from_millis(2500), Duration::from_secs(400));
 
         assert_eq!(timer.next(), Duration::from_millis(2500));
         assert_eq!(timer.next(), Duration::from_millis(2500));
